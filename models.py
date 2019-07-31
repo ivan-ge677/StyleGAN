@@ -140,11 +140,16 @@ class Style_Model():
         self.is_training = is_training
 
         self.r_alpha = r_alpha
-
-        self.input_height = input_height
-        self.input_width = input_width
-        self.output_height = output_height
-        self.output_width = output_width
+        #mnist
+        # self.input_height = input_height
+        # self.input_width = input_width
+        # self.output_height = output_height
+        # self.output_width = output_width
+        #skin_32_32
+        self.input_height = 32
+        self.input_width = 32
+        self.output_height = 32
+        self.output_width = 32
 
         self.z_dim = z_dim
 
@@ -162,12 +167,20 @@ class Style_Model():
             logging.basicConfig(filename='ALOCC_loss.log', level=logging.INFO)
 
         if self.dataset_name == 'mnist':
-            (X_train, y_train), (_, _) = mnist.load_data()
+            #mnist
+            # (X_train, y_train), (_, _) = mnist.load_data()
+            # # Make the data range between 0~1.
+            # X_train = X_train / 255
+            # specific_idx = np.where(y_train == self.attention_label)[0]
+            # self.data = X_train[specific_idx].reshape(-1, 28, 28, 1)
+            # self.c_dim = 4
+
+            #not mnist
+            X_train = np.load("/Users/chenjingkun/Documents/data/skin_32_32/skin_32_32_health_train.npy")
             # Make the data range between 0~1.
-            X_train = X_train / 255
-            specific_idx = np.where(y_train == self.attention_label)[0]
-            self.data = X_train[specific_idx].reshape(-1, 28, 28, 1)
-            self.c_dim = 4
+            X_train = X_train / 255.
+            self.data = X_train
+            self.c_dim = 6
         else:
             assert ('Error in loading dataset')
 
@@ -175,6 +188,8 @@ class Style_Model():
         self.build_model()
 
     def build_generator(self, input_shape):
+        #mnist 
+        '''
         """Build the generator/R network.
         
         Arguments:
@@ -227,7 +242,79 @@ class Style_Model():
         x = UpSampling2D((2, 2))(x)
         x = Conv2D(self.gf_dim * 2, kernel_size=3, activation='relu')(x)
         x = UpSampling2D((2, 2))(x)
-        x = Conv2D(1,
+        x = Conv2D(3,
+                   kernel_size=5,
+                   activation='sigmoid',
+                   padding='same')(x)
+        print("x:",x)
+        return Model(image, x, name='R'        
+        
+        
+        '''
+
+        #skin_32_32
+        """Build the generator/R network.
+        
+        Arguments:
+            input_shape {list} -- Generator input shape.
+        
+        Returns:
+            [Tensor] -- Output tensor of the generator/R network.
+        """
+        
+        image = Input(shape=input_shape, name='z')
+        # Encoder.
+        x = Conv2D(filters=self.df_dim * 2,
+                   kernel_size=5,
+                   strides=2,
+                   padding='same',
+                   name='g_encoder_h0_conv')(image)
+        
+        x = BatchNormalization()(x)
+        x = LeakyReLU()(x)
+        x = Conv2D(filters=self.df_dim * 4,
+                   kernel_size=5,
+                   strides=2,
+                   padding='same',
+                   name='g_encoder_h1_conv')(x)
+        x = BatchNormalization()(x)
+        x = LeakyReLU()(x)
+        x = Conv2D(filters=self.df_dim * 8,
+                   kernel_size=5,
+                   strides=2,
+                   padding='same',
+                   name='g_encoder_h2_conv')(x)
+        x = BatchNormalization()(x)
+        x = LeakyReLU()(x)
+
+        # Decoder.
+        # TODO: need a flexable solution to select output_padding and padding.
+        # x = Conv2DTranspose(self.gf_dim*2, kernel_size = 5, strides=2, activation='relu', padding='same', output_padding=0, name='g_decoder_h0')(x)
+        # x = BatchNormalization()(x)
+        # x = Conv2DTranspose(self.gf_dim*1, kernel_size = 5, strides=2, activation='relu', padding='same', output_padding=1, name='g_decoder_h1')(x)
+        # x = BatchNormalization()(x)
+        # x = Conv2DTranspose(self.c_dim,    kernel_size = 5, strides=2, activation='tanh', padding='same', output_padding=1, name='g_decoder_h2')(x)
+        
+        x = Conv2D(self.gf_dim * 1,
+                   kernel_size=5,
+                   activation='relu',
+                   padding='same')(x)
+        
+        x = UpSampling2D((2, 2))(x)
+        x = Conv2D(self.gf_dim * 1,
+                   kernel_size=5,
+                   activation='relu',
+                   padding='same')(x)
+        print("x:",x)
+
+        x = UpSampling2D((2, 2))(x)
+        #mnist
+        # x = Conv2D(self.gf_dim * 2, kernel_size=3, activation='relu')(x)
+        x = Conv2D(self.gf_dim * 1, kernel_size=5, activation='relu', padding='same')(x)
+
+        print("x:",x)
+        x = UpSampling2D((2, 2))(x)
+        x = Conv2D(3,
                    kernel_size=5,
                    activation='sigmoid',
                    padding='same')(x)
@@ -282,9 +369,15 @@ class Style_Model():
         return Model(image, x, name='D')
 
     def build_model(self):
+        #mnist
+        # image_dims = [self.input_height, self.input_width, self.c_dim]
+        # d_image_dims = [self.input_height, self.input_width, self.c_dim+1]
+        # labels_dims = [self.input_height, self.input_width, self.c_dim-1]
+        #skin_32_32
         image_dims = [self.input_height, self.input_width, self.c_dim]
-        d_image_dims = [self.input_height, self.input_width, self.c_dim+1]
-        labels_dims = [self.input_height, self.input_width, self.c_dim-1]
+        d_image_dims = [self.input_height, self.input_width, self.c_dim+3]
+        labels_dims = [self.input_height, self.input_width, self.c_dim-3]
+
         optimizer = RMSprop(lr=0.002, clipvalue=1.0, decay=1e-8)
         # Construct discriminator/D network takes real image as input.
         # D - sigmoid and D_logits -linear output.
@@ -343,9 +436,12 @@ class Style_Model():
             './{}/train_input_samples.jpg'.format(self.sample_dir),
             montage(sample_inputs[:, :, :, 0]))
 
-        #cluster data
-        cluster_data = self.data.reshape(-1, 28 * 28)
-        cluster_show = self.data.reshape(-1, 28, 28)
+        #mnist
+        # cluster_data = self.data.reshape(-1, 28 * 28)
+        # cluster_show = self.data.reshape(-1, 28, 28)
+        #skin_32_32
+        cluster_data = self.data.reshape(-1, 32 * 32 *3)
+        cluster_show = self.data.reshape(-1, 32, 32,3)
         print("self.data:", self.data.shape[0])
 
         print("cluster_show:", cluster_show.shape)
@@ -376,8 +472,12 @@ class Style_Model():
                 str(int(idx[iii])) + '.png', cluster_show[iii])
 
         print("idx:", len(idx), centroids, sse)
-        ones = np.ones((1, 28, 28, 1))
-        zeros = np.zeros((1, 28, 28, 1))
+        #mnist
+        # ones = np.ones((1, 28, 28, 1))
+        # zeros = np.zeros((1, 28, 28, 1))
+        #skin_32_32
+        ones = np.ones((1, 32, 32, 1))
+        zeros = np.zeros((1, 32, 32, 1))
         label_0 =  np.concatenate((np.concatenate((ones, zeros), axis=3), zeros), axis=3)
         label_1 =  np.concatenate((np.concatenate((zeros, ones), axis=3), zeros), axis=3)
         label_2 =  np.concatenate((np.concatenate((zeros, zeros), axis=3), ones), axis=3)
