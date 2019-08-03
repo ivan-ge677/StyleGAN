@@ -446,12 +446,12 @@ class Style_Model():
         cluster_show = self.data.reshape(-1, 32, 32, 3)
         
         
-        if(os.path.exists("labeled_data.npy")):
-            labeled_data = np.load("labeled_data.npy")
+        if(os.path.exists("skin_32_32_labeled_data.npy")):
+            labeled_data = np.load("skin_32_32_labeled_data.npy")
             print("exist labeled_data:",labeled_data.shape)
         else:
-            if(os.path.exists("centroids.npy")):
-                centroids = np.load("centroids.npy")
+            if(os.path.exists("skin_32_32_centroids.npy")):
+                centroids = np.load("skin_32_32_centroids.npy")
                 print("centroids:",centroids.shape)
                 idx, sse = find_closest_centroids(cluster_data, centroids)
             else:
