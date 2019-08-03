@@ -164,7 +164,7 @@ class Style_Model():
 
         self.attention_label = attention_label
         if self.is_training:
-            logging.basicConfig(filename='ALOCC_loss.log', level=logging.INFO)
+            logging.basicConfig(filename='StyleGAN_loss.log', level=logging.INFO)
 
         if self.dataset_name == 'mnist':
             #mnist
@@ -176,11 +176,12 @@ class Style_Model():
             # self.c_dim = 4
 
             #not mnist
-            X_train = np.load("/Users/chenjingkun/Documents/data/skin_32_32/skin_32_32_health_train.npy")
+            X_train = np.load("./skin_32_32_health_train.npy")
             # Make the data range between 0~1.
             X_train = X_train / 255.
+            print("X_train:",X_train.shape)
             self.data = X_train
-            self.c_dim = 6
+            self.c_dim = 8
         else:
             assert ('Error in loading dataset')
 
@@ -378,7 +379,7 @@ class Style_Model():
         d_image_dims = [self.input_height, self.input_width, self.c_dim+3]
         labels_dims = [self.input_height, self.input_width, self.c_dim-3]
 
-        optimizer = RMSprop(lr=0.002, clipvalue=1.0, decay=1e-8)
+        optimizer = RMSprop(lr=2e-4, clipvalue=1.0, decay=1e-8)
         # Construct discriminator/D network takes real image as input.
         # D - sigmoid and D_logits -linear output.
         self.discriminator = self.build_discriminator(d_image_dims)
@@ -405,7 +406,7 @@ class Style_Model():
         # generated images as real ones.
         self.adversarial_model = Model(img, [reconstructed_img, validity])
         self.adversarial_model.compile(
-            loss=['binary_crossentropy', 'binary_crossentropy'],
+            loss=['categorical_crossentropy', 'binary_crossentropy'],
             
             # loss=[dice_cross_loss, 'binary_crossentropy'],
             loss_weights=[self.r_alpha, 1],
@@ -440,68 +441,99 @@ class Style_Model():
         # cluster_data = self.data.reshape(-1, 28 * 28)
         # cluster_show = self.data.reshape(-1, 28, 28)
         #skin_32_32
+        
         cluster_data = self.data.reshape(-1, 32 * 32 *3)
-        cluster_show = self.data.reshape(-1, 32, 32,3)
-        print("self.data:", self.data.shape[0])
+        cluster_show = self.data.reshape(-1, 32, 32, 3)
+        
+        
+        if(os.path.exists("labeled_data.npy")):
+            labeled_data = np.load("labeled_data.npy")
+            print("exist labeled_data:",labeled_data.shape)
+        else:
+            if(os.path.exists("centroids.npy")):
+                centroids = np.load("centroids.npy")
+                print("centroids:",centroids.shape)
+                idx, sse = find_closest_centroids(cluster_data, centroids)
+            else:
+                print("self.data:", self.data.shape[0])
+                print("cluster_show:", cluster_show.shape)
+                print("cluster_data:", cluster_data.shape)
+                m = cluster_data.shape[0]
+                cluster_points = []
+                for i in range(m):
+                    cluster_points.append(cluster_data[i, :])
 
-        print("cluster_show:", cluster_show.shape)
-        print("cluster_data:", cluster_data.shape)
-        m = cluster_data.shape[0]
-        cluster_points = []
-        for i in range(m):
-            cluster_points.append(cluster_data[i, :])
+                print("cluster_points:", len(cluster_points))
+                cNum = 5
+                initial_centroids = np.array(initCenters(cluster_points, m, cNum))
+                print('initial_centroids:', len(initial_centroids))
 
-        print("cluster_points:", len(cluster_points))
-        cNum = 3
-        initial_centroids = np.array(initCenters(cluster_points, m, cNum))
-        print('initial_centroids:', len(initial_centroids))
+                max_iters = 10
+                idx, centroids, sse = run_k_means(cluster_data, initial_centroids,
+                                                max_iters)
+                np.save("centroids.npy", centroids)
+                print("len(centroids[0]):", len(centroids[0]))
+                print("centroids:", centroids)
+                print("len(idx):", len(idx))
+                print("sse:", sse)
+                img_dir = './labels/'
+                for iii in range(self.data.shape[0]):
 
-        max_iters = 3
-        idx, centroids, sse = run_k_means(cluster_data, initial_centroids,
-                                          max_iters)
-        np.save("centroids.npy", centroids)
-        print("len(centroids[0]):", len(centroids[0]))
-        print("centroids:", centroids)
-        print("len(idx):", len(idx))
-        print("sse:", sse)
-        img_dir = '/Users/chenjingkun/Documents/code/python/StyleGAN/labels/'
-        for iii in range(self.data.shape[0]):
+                    scipy.misc.imsave(
+                        img_dir + str(int(idx[iii])) + '/' + str(iii) + '_' +
+                        str(int(idx[iii])) + '.png', cluster_show[iii])
 
-            scipy.misc.imsave(
-                img_dir + str(int(idx[iii])) + '/' + str(iii) + '_' +
-                str(int(idx[iii])) + '.png', cluster_show[iii])
-
-        print("idx:", len(idx), centroids, sse)
-        #mnist
-        # ones = np.ones((1, 28, 28, 1))
-        # zeros = np.zeros((1, 28, 28, 1))
-        #skin_32_32
-        ones = np.ones((1, 32, 32, 1))
-        zeros = np.zeros((1, 32, 32, 1))
-        label_0 =  np.concatenate((np.concatenate((ones, zeros), axis=3), zeros), axis=3)
-        label_1 =  np.concatenate((np.concatenate((zeros, ones), axis=3), zeros), axis=3)
-        label_2 =  np.concatenate((np.concatenate((zeros, zeros), axis=3), ones), axis=3)
-
-        if (int(idx[0]) == 0):
-            labels =  label_0
-        if (int(idx[0]) == 1):
-            labels =  label_1
-        if (int(idx[0]) == 2):
-            labels =  label_2
-        print("labels:", idx[i])
-        print("self.data.shape[0]:", self.data.shape[0])
-        for i in range(1, self.data.shape[0]):
-            if (int(idx[i]) == 0):
-                labels = np.concatenate((labels, label_0), axis=0)
-            if (int(idx[i]) == 1):
-                labels = np.concatenate((labels, label_1), axis=0)
-            if (int(idx[i]) == 2):
-                labels = np.concatenate((labels, label_2), axis=0)
+            print("idx:", len(idx), centroids, sse)
+            #mnist
+            # ones = np.ones((1, 28, 28, 1))
+            # zeros = np.zeros((1, 28, 28, 1))
+            #skin_32_32
+            ones = np.ones((1, 32, 32, 1))
+            zeros = np.zeros((1, 32, 32, 1))
+            label_0 =  np.concatenate((np.concatenate((ones, zeros), axis=3), zeros), axis=3)
+            label_0 =  np.concatenate((label_0, zeros), axis=3)
+            label_0 =  np.concatenate((label_0, zeros), axis=3)
+            label_1 =  np.concatenate((np.concatenate((zeros, ones), axis=3), zeros), axis=3)
+            label_1 =  np.concatenate((label_1, zeros), axis=3)
+            label_1 =  np.concatenate((label_1, zeros), axis=3)
+            label_2 =  np.concatenate((np.concatenate((zeros, zeros), axis=3), ones), axis=3)
+            label_2 =  np.concatenate((label_2, zeros), axis=3)
+            label_2 =  np.concatenate((label_2, zeros), axis=3)
+            label_3 =  np.concatenate((np.concatenate((zeros, zeros), axis=3), zeros), axis=3)
+            label_3 =  np.concatenate((label_3, ones), axis=3)
+            label_3 =  np.concatenate((label_3, zeros), axis=3)
+            label_4 =  np.concatenate((np.concatenate((zeros, zeros), axis=3), zeros), axis=3)
+            label_4 =  np.concatenate((label_4, zeros), axis=3)
+            label_4 =  np.concatenate((label_4, ones), axis=3)
+            if (int(idx[0]) == 0):
+                labels =  label_0
+            if (int(idx[0]) == 1):
+                labels =  label_1
+            if (int(idx[0]) == 2):
+                labels =  label_2
+            if (int(idx[0]) == 3):
+                labels =  label_3
+            if (int(idx[0]) == 4):
+                labels =  label_4
+        
+            print("self.data.shape[0]:", self.data.shape[0])
+            for i in range(1, self.data.shape[0]):
+                if (int(idx[i]) == 0):
+                    labels = np.concatenate((labels, label_0), axis=0)
+                if (int(idx[i]) == 1):
+                    labels = np.concatenate((labels, label_1), axis=0)
+                if (int(idx[i]) == 2):
+                    labels = np.concatenate((labels, label_2), axis=0)
+                if (int(idx[i]) == 3):
+                    labels = np.concatenate((labels, label_3), axis=0)
+                if (int(idx[i]) == 4):
+                    labels = np.concatenate((labels, label_4), axis=0)
+                print("labels:", labels.shape)
             print("labels:", labels.shape)
-        print("labels:", idx[i], labels.shape)
-        labeled_data = np.concatenate((self.data, labels), axis=3)
-        print("self.data:", self.data.shape)
-        print("labeled_data:", labeled_data.shape)
+            labeled_data = np.concatenate((self.data, labels), axis=3)
+            np.save("labeled_data.npy", labeled_data)
+            print("self.data:", self.data.shape)
+            print("labeled_data:", labeled_data.shape)
 
         counter = 1
         # Record generator/R network reconstruction training losses.
@@ -511,7 +543,9 @@ class Style_Model():
         # Load traning data, add random noise.
         if self.dataset_name == 'mnist':
             sample_w_noise = get_noisy_data(self.data)
-            sample_w_noise = np.concatenate((sample_w_noise, labels), axis=3)
+            print("sample_w_noise.shape:",sample_w_noise.shape)
+            print("labeled_data[3:8].shape:",labeled_data[:,:,:,3:8].shape)
+            sample_w_noise = np.concatenate((sample_w_noise, labeled_data[:,:,:,3:8]), axis=3)
         # Adversarial ground truths
         ones = np.ones((batch_size, 1))
         zeros = np.zeros((batch_size, 1))
@@ -533,12 +567,12 @@ class Style_Model():
                 batch_clean = self.data[idx * batch_size:(idx + 1) *
                                         batch_size]
                 # Turn batch images data to float32 type.
-                batch_labels = np.array(labels).astype(np.float32)
+                # batch_labels = np.array(labels).astype(np.float32)
                 batch_images = np.array(batch).astype(np.float32)
                 batch_noise_images = np.array(batch_noise).astype(np.float32)
                 batch_clean_images = np.array(batch_clean).astype(np.float32)
 
-                labels_batch = batch_labels[idx * batch_size:(idx + 1) * batch_size]
+                # labels_batch = batch_labels[idx * batch_size:(idx + 1) * batch_size]
                 labeled_batch = labeled_data[idx * batch_size:(idx + 1) * batch_size]
                 labeled_batch_noise = sample_w_noise[idx * batch_size:(idx + 1) *
                                                 batch_size]
@@ -577,7 +611,7 @@ class Style_Model():
                     g_loss[0], g_loss[1])
                 print(msg)
                 logging.info(msg)
-                if np.mod(counter, sample_interval) == 0:
+                if np.mod(counter, sample_interval) == 1000:
                     if self.dataset_name == 'mnist':
                         samples = self.generator.predict(sample_inputs)
                         manifold_h = int(np.ceil(np.sqrt(samples.shape[0])))
