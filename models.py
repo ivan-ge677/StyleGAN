@@ -1,6 +1,6 @@
 from __future__ import print_function, division
 from keras.datasets import mnist
-from keras.layers import Input, Dense, Reshape, Flatten, Dropout, multiply, GaussianNoise, Concatenate
+from keras.layers import Input, Dense, Reshape, Flatten, Dropout, multiply, GaussianNoise, Concatenate, Lambda
 from keras.layers import BatchNormalization, Activation, Embedding, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D, Conv2DTranspose
@@ -18,11 +18,18 @@ from keras.losses import binary_crossentropy
 from DRUNet32f import get_model
 import numpy as np
 
+# a = Input(batch_shape=(10,32,32,8))
+
+
+
 from utils import *
 from kh_tools import *
 from initial import *
 
 smooth = 1.
+
+def slice(x):
+    return x[:,:,:,3:8]
 
 
 def dice_coef_for_training(y_true, y_pred):
@@ -176,7 +183,7 @@ class Style_Model():
             # self.c_dim = 4
 
             #not mnist
-            X_train = np.load("./skin_32_32_health_train.npy")
+            X_train = np.load("./skin_32_32_health_train_hsv.npy")
             # Make the data range between 0~1.
             X_train = X_train / 255.
             print("X_train:",X_train.shape)
@@ -375,11 +382,12 @@ class Style_Model():
         # d_image_dims = [self.input_height, self.input_width, self.c_dim+1]
         # labels_dims = [self.input_height, self.input_width, self.c_dim-1]
         #skin_32_32
-        image_dims = [self.input_height, self.input_width, self.c_dim]
-        d_image_dims = [self.input_height, self.input_width, self.c_dim+3]
-        labels_dims = [self.input_height, self.input_width, self.c_dim-3]
+        image_dims = [self.input_height, self.input_width, 8]
+        or_image_dims = [self.input_height, self.input_width, 3]
+        d_image_dims = [self.input_height, self.input_width, 8]
+        labels_dims = [self.input_height, self.input_width, 5]
 
-        optimizer = RMSprop(lr=2e-4, clipvalue=1.0, decay=1e-8)
+        optimizer = RMSprop(lr=0.002, clipvalue=1.0, decay=1e-8)
         # Construct discriminator/D network takes real image as input.
         # D - sigmoid and D_logits -linear output.
         self.discriminator = self.build_discriminator(d_image_dims)
@@ -391,22 +399,28 @@ class Style_Model():
         # Construct generator/R network.
         # self.generator = get_model(image_dims)
         self.generator = self.build_generator(image_dims)
-        img = Input(shape=image_dims)
-        
-        reconstructed_img = self.generator(img)
-        print("img:",img)
+        img_input = Input(shape=image_dims)
+        # labels_input = Input(shape=labels_dims)
+        # img_input = Concatenate()([img, labels_input])
+        print("img_input:",img_input)
+        reconstructed_img = self.generator(img_input)
+        # print("img:",img)
+        labels_input = Lambda(slice)(img_input)
+        # model = Model(a, b)
+        # model.summary()
         print("before_reconstructed_img:",reconstructed_img)
+        reconstructed_img_new = Concatenate()([reconstructed_img, labels_input])
+        print("after_reconstructed_img:",reconstructed_img_new)
 
-        reconstructed_img_new = Concatenate()([reconstructed_img, img])
         self.discriminator.trainable = False
         validity = self.discriminator(reconstructed_img_new)
         
-        print("after_reconstructed_img:",reconstructed_img_new)
         # Model to train Generator/R to minimize reconstruction loss and trick D to see
         # generated images as real ones.
-        self.adversarial_model = Model(img, [reconstructed_img, validity])
+        print(img_input, reconstructed_img, validity)
+        self.adversarial_model = Model(img_input, [reconstructed_img, validity])
         self.adversarial_model.compile(
-            loss=['categorical_crossentropy', 'binary_crossentropy'],
+            loss=['binary_crossentropy', 'binary_crossentropy'],
             
             # loss=[dice_cross_loss, 'binary_crossentropy'],
             loss_weights=[self.r_alpha, 1],
@@ -425,6 +439,7 @@ class Style_Model():
         # Make log folder if not exist.
         log_dir = os.path.join(self.log_dir, self.model_dir)
         os.makedirs(log_dir, exist_ok=True)
+        
 
         if self.dataset_name == 'mnist':
             # Get a batch of sample images with attention_label to export as montage.
@@ -446,12 +461,13 @@ class Style_Model():
         cluster_show = self.data.reshape(-1, 32, 32, 3)
         
         
-        if(os.path.exists("skin_32_32_labeled_data.npy")):
-            labeled_data = np.load("skin_32_32_labeled_data.npy")
+        if(os.path.exists("skin_32_32_labeled_data_hsv.npy")):
+            labeled_data = np.load("skin_32_32_labeled_data_hsv.npy")
+            labels = labeled_data[:,:,:,3:8]
             print("exist labeled_data:",labeled_data.shape)
         else:
-            if(os.path.exists("skin_32_32_centroids.npy")):
-                centroids = np.load("skin_32_32_centroids.npy")
+            if(os.path.exists("skin_32_32_centroids_hsv.npy")):
+                centroids = np.load("skin_32_32_centroids_hsv.npy")
                 print("centroids:",centroids.shape)
                 idx, sse = find_closest_centroids(cluster_data, centroids)
             else:
@@ -471,7 +487,7 @@ class Style_Model():
                 max_iters = 10
                 idx, centroids, sse = run_k_means(cluster_data, initial_centroids,
                                                 max_iters)
-                np.save("centroids.npy", centroids)
+                np.save("skin_32_32_centroids_hsv.npy", centroids)
                 print("len(centroids[0]):", len(centroids[0]))
                 print("centroids:", centroids)
                 print("len(idx):", len(idx))
@@ -488,6 +504,7 @@ class Style_Model():
             # ones = np.ones((1, 28, 28, 1))
             # zeros = np.zeros((1, 28, 28, 1))
             #skin_32_32
+            
             ones = np.ones((1, 32, 32, 1))
             zeros = np.zeros((1, 32, 32, 1))
             label_0 =  np.concatenate((np.concatenate((ones, zeros), axis=3), zeros), axis=3)
@@ -515,7 +532,7 @@ class Style_Model():
                 labels =  label_3
             if (int(idx[0]) == 4):
                 labels =  label_4
-        
+            
             print("self.data.shape[0]:", self.data.shape[0])
             for i in range(1, self.data.shape[0]):
                 if (int(idx[i]) == 0):
@@ -531,7 +548,7 @@ class Style_Model():
                 print("labels:", labels.shape)
             print("labels:", labels.shape)
             labeled_data = np.concatenate((self.data, labels), axis=3)
-            np.save("labeled_data.npy", labeled_data)
+            np.save("skin_32_32_labeled_data_hsv.npy", labeled_data)
             print("self.data:", self.data.shape)
             print("labeled_data:", labeled_data.shape)
 
@@ -567,12 +584,13 @@ class Style_Model():
                 batch_clean = self.data[idx * batch_size:(idx + 1) *
                                         batch_size]
                 # Turn batch images data to float32 type.
-                # batch_labels = np.array(labels).astype(np.float32)
+                # print("labels:",labels.shape)
+                batch_labels = np.array(labels).astype(np.float32)
                 batch_images = np.array(batch).astype(np.float32)
                 batch_noise_images = np.array(batch_noise).astype(np.float32)
                 batch_clean_images = np.array(batch_clean).astype(np.float32)
 
-                # labels_batch = batch_labels[idx * batch_size:(idx + 1) * batch_size]
+                labels_batch = batch_labels[idx * batch_size:(idx + 1) * batch_size]
                 labeled_batch = labeled_data[idx * batch_size:(idx + 1) * batch_size]
                 labeled_batch_noise = sample_w_noise[idx * batch_size:(idx + 1) *
                                                 batch_size]
@@ -586,17 +604,17 @@ class Style_Model():
                     batch_fake_images = self.generator.predict(
                         labeled_batch_noise_images)
                     # Update D network, minimize real images inputs->D-> ones, noisy z->R->D->zeros loss.
-                    batch_true_images = np.concatenate((batch_clean_images, labeled_batch_clean),
-                                           axis=3)
+                    # batch_true_images = np.concatenate((batch_clean_images, labeled_batch_images),
+                    #                        axis=3)
                     d_loss_real = self.discriminator.train_on_batch(
-                        batch_true_images, ones)
+                        labeled_batch_clean_images, ones)
 
-                    batch_fake_images = np.concatenate((batch_fake_images, labeled_batch_clean),
+                    batch_fake_images_new = np.concatenate((batch_fake_images, labeled_batch_images[:,:,:,3:8]),
                                            axis=3)
 
 
                     d_loss_fake = self.discriminator.train_on_batch(
-                        batch_fake_images, zeros)
+                        batch_fake_images_new, zeros)
 
                     # Update R network twice, minimize noisy z->R->D->ones and reconstruction loss.
                     self.adversarial_model.train_on_batch(
@@ -649,5 +667,5 @@ class Style_Model():
 
 
 if __name__ == '__main__':
-    model = Style_Model(dataset_name='mnist', input_height=28, input_width=28)
-    model.train(epochs=5, batch_size=128, sample_interval=500)
+    model = Style_Model(dataset_name='mnist', input_height=32, input_width=32)
+    model.train(epochs=100, batch_size=256, sample_interval=500)

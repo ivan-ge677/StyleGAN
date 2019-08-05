@@ -7,6 +7,8 @@ from keras.losses import binary_crossentropy
 from keras.datasets import mnist
 import seaborn as sns
 import pandas as pd
+from matplotlib.colors import hsv_to_rgb
+
 
 def find_closest_centroids_cluster(X, centroids):
     m = X.shape[0]
@@ -30,14 +32,14 @@ def find_closest_centroids_cluster(X, centroids):
 
 attention_label = 7
 
-self =Style_Model(dataset_name='mnist', input_height=28,input_width=28)
-self.adversarial_model.load_weights('./checkpoint/Style_Model_4.h5')
+self =Style_Model(dataset_name='mnist', input_height=32,input_width=32)
+self.adversarial_model.load_weights('./checkpoint/Style_Model_5.h5')
 # (X_train, y_train), (_, _) = mnist.load_data()
 # X_train = X_train / 255.
 
 
 # print("X_train:",X_train.shape)
-X_train = np.load("./skin_32_32_lesion_test.npy")
+X_train = np.load("./skin_32_32_lesion_test_hsv.npy")
 X_train = X_train / 255.
 # Make the data range between 0~1.
 
@@ -46,7 +48,7 @@ print("test_data:",test_data.shape)
 # specific_idx = np.where(y_train == attention_label)
 # test_data = X_train[specific_idx].reshape(-1, 28, 28, 1)
 # test_data = test_data[0:200]
-centroids = np.load("centroids.npy")
+centroids = np.load("skin_32_32_centroids_hsv.npy")
 print("centroids:",centroids.shape)
 idx, sse = find_closest_centroids_cluster(test_data, centroids)
 
@@ -138,8 +140,8 @@ def test_reconstruction():
         # print("model_predicts:",model_predicts[0].shape)
         columns = 1
         rows = 2
-        # fig= plt.figure(figsize=(8, 8))
-        # fig.add_subplot(rows, columns, 1)
+        fig= plt.figure(figsize=(8, 8))
+        fig.add_subplot(rows, columns, 1)
         input_image = data.reshape((32, 32, 8))
 
 
@@ -147,17 +149,19 @@ def test_reconstruction():
         input_image = data[:,:,:,0:3].reshape(32, 32,3)
         # input_image = X_train[0:10]
         reconstructed_image = model_predicts[0].reshape(32, 32, 3)
-        # plt.title('Input')
-        # plt.imshow(input_image, label='Input')
-        # fig.add_subplot(rows, columns, 2)
-        # plt.title('Reconstruction')
-        # plt.imshow(reconstructed_image, label='Reconstructed')
-        # plt.show()
+        plt.title('Input')
+        input_image_plt = hsv_to_rgb(input_image)
+        plt.imshow(input_image_plt, label='Input')
+        fig.add_subplot(rows, columns, 2)
+        plt.title('Reconstruction')
+        reconstructed_image_plt = hsv_to_rgb(reconstructed_image)
+        plt.imshow(reconstructed_image_plt, label='Reconstructed')
+        plt.show()
         y_true = K.variable(reconstructed_image)
         y_pred = K.variable(input_image)
         error = K.eval(binary_crossentropy(y_true, y_pred)).mean()
-        # print('Reconstruction loss, Discriminator Output:', error, model_predicts[1][0][0])
-        print(error+1-model_predicts[1][0][0])
+        print('Reconstruction loss, Discriminator Output:', error, model_predicts[1][0][0])
+        # print(error+1-model_predicts[1][0][0])
 
 
 
